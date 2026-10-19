@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pinkeys — Identity</title>
+
+<!-- Google Fonts: Space Grotesk for UI text, IBM Plex Mono for typed/passage text -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<!-- Tailwind CDN: reads utility classes straight out of this HTML at page-load,
+     no build step, no npm. Almost all styling below is Tailwind classes; the
+     few things Tailwind can't do (color-mode tokens, per-character typing
+     colors, the caret blink) live in styles.css instead. -->
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body class="min-h-screen">
+
+<!-- Recording indicator — hidden until the first real keystroke of a task
+     (see "lazy start" in script.js section 5), so it only appears once
+     the timer and keystroke logger have actually started. -->
+<div id="recBadge" class="hidden fixed top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 bg-[var(--surface)] border border-[var(--incorrect)] text-[var(--incorrect)] rounded-full px-5 py-2 text-xl shadow-lg">
+  <span class="w-2.5 h-2.5 rounded-full bg-[var(--incorrect)] animate-pulse"></span>
+  <span class="mono" id="recBadgeTime">00:00</span>
+</div>
+
+<div class="w-full px-4 sm:px-6 lg:px-10 py-4 sm:py-5">
+
+  <!-- ============================== HEADER ============================== -->
+  <!-- Logo on the left, Practice/Test/Identity page links on the right.
+       Each page sets #navPill's position to match its own link. -->
+  <header class="flex items-center justify-between flex-wrap gap-3 mb-4">
+    <div class="flex items-center gap-1.5">
+      <svg viewBox="0 0 40 40" aria-hidden="true" width="18" height="18">
+        <g fill="none" stroke-width="1.4">
+          <path class="fp-mark" d="M20 6 C10 6 5 14 5 20 C5 28 11 34 20 34" />
+          <path class="fp-mark" d="M20 11 C13 11 10 16 10 20 C10 26 14 30 19 31" />
+          <path class="fp-mark" d="M20 16 C16 16 15 19 15 21 C15 24 17 26 20 27" />
+        </g>
+      </svg>
+      <span class="font-semibold tracking-tight text-base">Pinkeys</span>
+    </div>
+
+    <nav class="relative flex bg-[var(--surface)] border border-[var(--border)] rounded-full p-[3px] min-w-[260px]" id="nav">
+      <div class="absolute top-[3px] bottom-[3px] w-[calc(33.333%-6px)] rounded-full bg-[var(--ink)]" id="navPill" style="left: calc(2 * 33.333% + 3px)"></div>
+      <a href="index.html" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-[var(--muted)]">Practice</a>
+      <a href="test.html" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-[var(--muted)]">Test</a>
+      <a href="identity.html" aria-current="page" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-white">Identity</a>
+    </nav>
+  </header>
+
+  <main id="page-identity">
+    <div class="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-8 sm:p-10 lg:p-12">
+
+      <!-- ---- screen 1: upload reference CSVs ---- -->
+      <div id="idUpload">
+        <h1 class="text-2xl sm:text-3xl font-semibold mb-2">Identity check</h1>
+        <p class="text-base text-[var(--muted)] mb-7">
+          Upload one or more enrollment CSVs exported from the Test page, then type 3 short passages live.
+          We'll compare your live typing against each stored profile.
+        </p>
+        <!-- optional: smarter matching by the Python API (pinkeys_api/) running on this machine -->
+        <div class="border border-[var(--border)] rounded-xl p-4 mb-6">
+          <label class="flex items-center gap-2 text-base cursor-pointer">
+            <input type="checkbox" id="idApiOn" class="w-4 h-4" />
+            <span class="font-medium">Use the Python API</span>
+            <span class="text-sm text-[var(--muted)]">— several models combined, live guess while typing</span>
+          </label>
+          <div id="idApiFields" class="hidden mt-3 flex flex-wrap gap-3 items-center">
+            <input id="idApiUrl" type="text" placeholder="http://localhost:8000" class="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm w-64 outline-none focus:border-[var(--ink)]" />
+            <input id="idApiKey" type="password" placeholder="API key (only if you set one)" class="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm w-56 outline-none focus:border-[var(--ink)]" />
+            <button type="button" id="idApiWake" class="bg-[var(--ink)] text-white rounded-full px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50 transition-opacity">Wake up API</button>
+            <button type="button" id="idApiReload" class="border border-[var(--border)] rounded-full px-4 py-2 text-sm hover:border-[var(--ink)] disabled:opacity-50 transition-colors">Load newest model</button>
+            <button type="button" id="idApiTest" class="border border-[var(--border)] rounded-full px-4 py-2 text-sm hover:border-[var(--ink)] disabled:opacity-50 transition-colors">Test connection</button>
+          </div>
+          <p id="idApiStatus" class="text-sm text-[var(--muted)] mt-2"></p>
+        </div>
+        <input type="file" id="idFileInput" accept=".csv" multiple class="text-base mb-3" />
+        <p class="text-sm text-[var(--muted)] mb-7" id="idUploadStatus"></p>
+        <button type="button" id="idContinue" disabled class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">Continue to live test</button>
+      </div>
+
+      <!-- ---- screen 2: one live sample in progress ---- -->
+      <div id="idRunning" class="hidden">
+        <div class="flex items-center gap-3 mb-5 flex-wrap">
+          <button type="button" id="idRestart" title="Restart (Tab, then Enter)" aria-label="Restart this sample"
+            class="w-10 h-10 rounded-full border border-[var(--border)] flex items-center justify-center text-[var(--muted)] hover:border-[var(--ink)] hover:text-[var(--ink)] transition-colors shrink-0">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11A8 8 0 1 0 18.5 16" /><polyline points="20 4 20 11 13 11" /></svg>
+          </button>
+          <span class="text-sm text-[var(--muted)]" id="idProgress">Live sample 1 of 3</span>
+        </div>
+        <p id="idLiveGuess" class="hidden text-sm text-[var(--ink)] mb-3"></p>
+        <p class="text-base sm:text-lg mb-6" id="idPassageText"></p>
+        <div class="relative">
+          <div class="stage" id="idStage"></div>
+          <textarea id="idInput" class="absolute inset-0 w-full h-full opacity-0 resize-none cursor-text border-0 p-0" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+        </div>
+        <p class="text-sm text-[var(--muted)] mt-4">The last word and its punctuation must be typed exactly right to finish.</p>
+      </div>
+
+      <!-- ---- screen 3: confirm before the next live sample ---- -->
+      <div id="idInterstitial" class="hidden text-center py-6">
+        <svg viewBox="0 0 40 40" class="mx-auto mb-5" aria-hidden="true" width="28" height="28">
+          <g fill="none" stroke-width="1.4">
+            <path class="fp-mark" d="M20 6 C10 6 5 14 5 20 C5 28 11 34 20 34" />
+            <path class="fp-mark" d="M20 11 C13 11 10 16 10 20 C10 26 14 30 19 31" />
+            <path class="fp-mark" d="M20 16 C16 16 15 19 15 21 C15 24 17 26 20 27" />
+          </g>
+        </svg>
+        <h2 class="text-xl sm:text-2xl font-semibold mb-2">Task complete</h2>
+        <p class="text-base text-[var(--muted)] mb-5" id="idInterstitialText">Live samples: 1 / 3 complete</p>
+        <div class="text-left mb-8">
+          <div class="text-sm text-[var(--muted)] mb-2">What you typed</div>
+          <div id="idTyped" class="mono text-base leading-relaxed whitespace-pre-wrap break-words bg-[var(--bg)] border border-[var(--border)] rounded-xl px-4 py-3 max-h-64 overflow-y-auto"></div>
+        </div>
+        <button type="button" id="idContinueTask" class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 transition-opacity">Continue</button>
+        <p class="text-sm text-[var(--muted)] mt-4">or press Enter</p>
+      </div>
+
+      <!-- ---- screen 4: ranked results ---- -->
+      <div id="idResult" class="hidden">
+        <h1 class="text-2xl sm:text-3xl font-semibold mb-2">Closest match</h1>
+        <p class="text-base text-[var(--muted)] mb-7" id="idResultSummary"></p>
+        <div id="idApiResult" class="hidden mb-9">
+          <h2 class="text-lg font-semibold mb-1">Python API</h2>
+          <p class="text-base mb-4" id="idApiSummary"></p>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm border-collapse">
+              <thead>
+                <tr class="text-left text-xs text-[var(--muted)] border-b border-[var(--border)]">
+                  <th class="py-2 pr-3">Rank</th><th class="py-2 pr-3">Name</th><th class="py-2 pr-3">Probability</th>
+                  <th class="py-2 pr-3">Pair timing</th><th class="py-2 pr-3">LDA</th><th class="py-2 pr-3">SVM</th>
+                  <th class="py-2 pr-3">Forest</th><th class="py-2 pr-3">k-NN</th><th class="py-2 pr-3">Distance</th>
+                </tr>
+              </thead>
+              <tbody id="idApiBody"></tbody>
+            </table>
+          </div>
+          <p class="text-xs text-[var(--muted)] mt-2" id="idApiNote"></p>
+          <h2 class="text-lg font-semibold mt-8 mb-1">In-browser comparison</h2>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-base border-collapse">
+            <thead>
+              <tr class="text-left text-sm text-[var(--muted)] border-b border-[var(--border)]">
+                <th class="py-3 pr-4">Rank</th>
+                <th class="py-3 pr-4">Name</th>
+                <th class="py-3 pr-4">Similarity</th>
+                <th class="py-3 pr-4">Mean dwell</th>
+                <th class="py-3 pr-4">Mean flight</th>
+                <th class="py-3 pr-4">WPM</th>
+                <th class="py-3 pr-4">Accuracy</th>
+              </tr>
+            </thead>
+            <!-- rows are the one part of this table that must be built in JS —
+                 the ranking depends on whatever CSVs were just uploaded -->
+            <tbody id="idResultBody"></tbody>
+          </table>
+        </div>
+        <div class="mt-7">
+          <button type="button" id="idRunAgain" class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 transition-opacity">Run another check</button>
+        </div>
+        <p class="text-sm text-[var(--muted)] mt-5">
+          Similarity is a simple weighted distance over dwell, flight, DD, UU, backspace rate, and WPM —
+          a starting point, not a validated classifier.
+        </p>
+      </div>
+
+    </div>
+  </main>
+
+</div>
+
+<script src="common.js"></script>
+<script src="api.js"></script>
+<script src="identity.js"></script>
+</body>
+</html>

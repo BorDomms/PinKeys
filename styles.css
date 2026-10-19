@@ -1,0 +1,125 @@
+/* ==============================================================
+   PINKEYS — custom CSS, kept deliberately small. Nearly everything
+   visual in this app is a Tailwind utility class written directly
+   in index.html; what's here is only the handful of things Tailwind
+   can't express as a utility class (CSS custom properties that
+   switch with the OS theme, @keyframes, and per-character state
+   classes applied dynamically by script.js).
+
+   1. COLOR TOKENS        light theme, then dark theme override
+   2. BASE                fonts, box-sizing, body background
+   3. STAGE CHARACTERS    per-character coloring + blinking caret
+   4. MISC                banner background, fingerprint motif, a11y
+   ============================================================== */
+
+/* -------------------------------------------------------------
+   1. COLOR TOKENS
+   Referenced throughout index.html as e.g. bg-[var(--surface)].
+   Tailwind's own dark: variant isn't used anywhere in this app —
+   these variables switch themselves via prefers-color-scheme, so
+   every element that reads them gets dark mode for free.
+   ------------------------------------------------------------- */
+:root {
+  --bg: #edeef0;
+  --surface: #ffffff;
+  --text: #1b1d21;
+  --muted: #6b6f76;
+  --border: #d8dadd;
+  --ink: #2f5d50;
+  --correct: #3f7d5c;
+  --incorrect: #b4483a;
+  --extra: #7b5ea7;
+  --missed: #9a9ea6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16171a;
+    --surface: #1e2023;
+    --text: #e8e9ec;
+    --muted: #9a9ea6;
+    --border: #2b2d31;
+    --ink: #5fa98d;
+    --correct: #6fbf95;
+    --incorrect: #e0796a;
+    --extra: #a98be0;
+    --missed: #6c6f76;
+  }
+}
+
+/* -------------------------------------------------------------
+   2. BASE
+   ------------------------------------------------------------- */
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); }
+body { font-family: "Space Grotesk", ui-sans-serif, sans-serif; }
+button, input, textarea { font-family: inherit; }
+
+/* Used for stat values and raw keystroke-style numbers — functional
+   here (lines up digits), not decorative. */
+.mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+/* -------------------------------------------------------------
+   3. STAGE CHARACTERS
+   .stage itself is mostly Tailwind-free-form (background/border/
+   padding all come from utility classes in index.html) except its
+   font-size, which uses Tailwind's clamp() arbitrary-value support
+   directly in the HTML class attribute — so the only things that
+   truly need defining here are the per-character state colors and
+   the caret, both applied/removed dynamically as the person types
+   (buildStageHTML() in script.js, section 5).
+   ------------------------------------------------------------- */
+.stage {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  line-height: 1.9;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  min-height: 140px;
+  user-select: none;
+  cursor: text;
+  font-size: clamp(1.15rem, 2.2vw, 1.75rem);
+}
+@media (min-width: 640px) { .stage { padding: 2rem; } }
+
+.ch { transition: color 60ms linear; }
+.ch-pending { color: var(--muted); }
+.ch-correct { color: var(--correct); }
+.ch-incorrect { color: var(--incorrect); text-decoration: underline; text-decoration-color: var(--incorrect); }
+.ch-extra { color: var(--extra); }
+.ch-missed { color: var(--missed); text-decoration: line-through; }
+
+/* Blinking caret marking the next character to type. */
+.ch-current { position: relative; }
+.ch-current::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  background: var(--ink);
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* -------------------------------------------------------------
+   4. MISC
+   ------------------------------------------------------------- */
+/* The enrollment-test warning banner. Uses color-mix() for a translucent
+   ink tint — Tailwind's /opacity modifier can't resolve a CSS custom
+   property's color, so this one stays hand-written. */
+.banner {
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  border: 1px solid var(--ink);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+}
+
+/* Quiet decorative arcs behind the wordmark and on the interstitial screens. */
+.fp-mark { stroke: var(--ink); opacity: 0.35; fill: none; }
+
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ch-current::before { animation: none; }
+}

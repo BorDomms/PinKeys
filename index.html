@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pinkeys — Practice</title>
+
+<!-- Google Fonts: Space Grotesk for UI text, IBM Plex Mono for typed/passage text -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<!-- Tailwind CDN: reads utility classes straight out of this HTML at page-load,
+     no build step, no npm. Almost all styling below is Tailwind classes; the
+     few things Tailwind can't do (color-mode tokens, per-character typing
+     colors, the caret blink) live in styles.css instead. -->
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body class="min-h-screen">
+
+<!-- Recording indicator — hidden until the first real keystroke of a task
+     (see "lazy start" in script.js section 5), so it only appears once
+     the timer and keystroke logger have actually started. -->
+<div id="recBadge" class="hidden fixed top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 bg-[var(--surface)] border border-[var(--incorrect)] text-[var(--incorrect)] rounded-full px-5 py-2 text-xl shadow-lg">
+  <span class="w-2.5 h-2.5 rounded-full bg-[var(--incorrect)] animate-pulse"></span>
+  <span class="mono" id="recBadgeTime">00:00</span>
+</div>
+
+<div class="w-full px-4 sm:px-6 lg:px-10 py-4 sm:py-5">
+
+  <!-- ============================== HEADER ============================== -->
+  <!-- Logo on the left, Practice/Test/Identity page links on the right.
+       Each page sets #navPill's position to match its own link. -->
+  <header class="flex items-center justify-between flex-wrap gap-3 mb-4">
+    <div class="flex items-center gap-1.5">
+      <svg viewBox="0 0 40 40" aria-hidden="true" width="18" height="18">
+        <g fill="none" stroke-width="1.4">
+          <path class="fp-mark" d="M20 6 C10 6 5 14 5 20 C5 28 11 34 20 34" />
+          <path class="fp-mark" d="M20 11 C13 11 10 16 10 20 C10 26 14 30 19 31" />
+          <path class="fp-mark" d="M20 16 C16 16 15 19 15 21 C15 24 17 26 20 27" />
+        </g>
+      </svg>
+      <span class="font-semibold tracking-tight text-base">Pinkeys</span>
+    </div>
+
+    <nav class="relative flex bg-[var(--surface)] border border-[var(--border)] rounded-full p-[3px] min-w-[260px]" id="nav">
+      <div class="absolute top-[3px] bottom-[3px] w-[calc(33.333%-6px)] rounded-full bg-[var(--ink)]" id="navPill" style="left: calc(0 * 33.333% + 3px)"></div>
+      <a href="index.html" aria-current="page" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-white">Practice</a>
+      <a href="test.html" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-[var(--muted)]">Test</a>
+      <a href="identity.html" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-[var(--muted)]">Identity</a>
+    </nav>
+  </header>
+
+  <main id="page-practice">
+    <div class="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-8 sm:p-10 lg:p-12">
+      <h1 class="text-2xl sm:text-3xl font-semibold mb-2">Practice</h1>
+      <p class="text-base text-[var(--muted)] mb-6">Free typing practice. Nothing here is saved.</p>
+
+      <!-- restart (first in tab order) + mode buttons + word-count buttons, all one row -->
+      <div class="flex flex-wrap items-center gap-2 mb-6" id="practiceControls">
+        <button type="button" id="practiceRestart" title="Restart (Tab, then Enter)" aria-label="Restart this passage"
+          class="w-10 h-10 rounded-full border border-[var(--border)] flex items-center justify-center text-[var(--muted)] hover:border-[var(--ink)] hover:text-[var(--ink)] transition-colors shrink-0">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11A8 8 0 1 0 18.5 16" /><polyline points="20 4 20 11 13 11" /></svg>
+        </button>
+        <span class="w-px h-6 bg-[var(--border)] mx-1" aria-hidden="true"></span>
+
+        <!-- mode pills: which passage pool Practice draws from -->
+        <button type="button" data-mode="words" class="px-4 py-2 rounded-full text-sm sm:text-base border transition-colors bg-[var(--ink)] text-white border-[var(--ink)]">Random words</button>
+        <button type="button" data-mode="quote" class="px-4 py-2 rounded-full text-sm sm:text-base border transition-colors border-[var(--border)] text-[var(--muted)]">Quote</button>
+        <button type="button" data-mode="short" class="px-4 py-2 rounded-full text-sm sm:text-base border transition-colors border-[var(--border)] text-[var(--muted)]">Short text</button>
+        <button type="button" data-mode="long" class="px-4 py-2 rounded-full text-sm sm:text-base border transition-colors border-[var(--border)] text-[var(--muted)]">Long text</button>
+        <button type="button" data-mode="free" class="px-4 py-2 rounded-full text-sm sm:text-base border transition-colors border-[var(--border)] text-[var(--muted)]">Free type</button>
+
+        <!-- word-count pills: only meaningful in "words" mode, hidden otherwise -->
+        <span class="w-px h-6 bg-[var(--border)] mx-1" aria-hidden="true" id="wcDivider"></span>
+        <span id="wordCountGroup">
+          <button type="button" data-wc="10" class="px-4 py-2 rounded-full text-sm sm:text-base border transition-colors border-[var(--border)] text-[var(--muted)]">10 words</button>
+          <button type="button" data-wc="25" class="px-4 py-2 rounded-full text-sm sm:text-base border transition-colors bg-[var(--ink)] text-white border-[var(--ink)]">25 words</button>
+          <button type="button" data-wc="50" class="px-4 py-2 rounded-full text-sm sm:text-base border transition-colors border-[var(--border)] text-[var(--muted)]">50 words</button>
+        </span>
+      </div>
+
+      <!-- the live typing task: colored passage + an invisible textarea stacked exactly on top of it -->
+      <div id="practiceTask">
+        <div class="relative" id="practiceFixedWrap">
+          <div class="stage" id="practiceStage"></div>
+          <textarea id="practiceInput" class="absolute inset-0 w-full h-full opacity-0 resize-none cursor-text border-0 p-0" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+        </div>
+        <p class="text-sm text-[var(--muted)] mt-4" id="practiceFixedHint">The last word and its punctuation must be typed exactly right to finish.</p>
+
+        <!-- free type mode: no passage, just a text box. Scored afterwards with the spellchecker. -->
+        <textarea id="practiceFreeInput" placeholder="Type anything you like..." autocapitalize="off" spellcheck="false" rows="6"
+          class="hidden w-full bg-[var(--bg)] border border-[var(--border)] rounded-xl px-5 py-4 leading-relaxed outline-none resize-y text-[clamp(1.05rem,1.8vw,1.35rem)] focus:border-[var(--ink)]"></textarea>
+        <div class="hidden flex items-center gap-4 mt-5 flex-wrap" id="practiceFreeControls">
+          <button type="button" id="practiceFreeNext" disabled class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">Finish</button>
+          <span class="text-sm text-[var(--muted)]" id="practiceFreeHint">0 / 10 characters</span>
+        </div>
+      </div>
+
+      <!-- results, shown after a task finishes; swapped in for practiceTask above -->
+      <div id="practiceResult" class="hidden">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div class="border border-[var(--border)] rounded-xl px-5 py-4"><div class="mono text-2xl sm:text-3xl text-[var(--ink)]" id="pWpm">0</div><div class="text-sm font-medium mt-1">WPM</div><div class="text-xs text-[var(--muted)] mt-0.5">Correct typing speed</div></div>
+          <div class="border border-[var(--border)] rounded-xl px-5 py-4"><div class="mono text-2xl sm:text-3xl text-[var(--ink)]" id="pRawWpm">0</div><div class="text-sm font-medium mt-1">Raw WPM</div><div class="text-xs text-[var(--muted)] mt-0.5">Overall typing speed</div></div>
+          <div class="border border-[var(--border)] rounded-xl px-5 py-4"><div class="mono text-2xl sm:text-3xl text-[var(--ink)]" id="pAccuracy">0%</div><div class="text-sm font-medium mt-1">Accuracy</div><div class="text-xs text-[var(--muted)] mt-0.5">Share of typed letters that were right</div></div>
+          <div class="border border-[var(--border)] rounded-xl px-5 py-4"><div class="mono text-2xl sm:text-3xl text-[var(--ink)]" id="pConsistency">0%</div><div class="text-sm font-medium mt-1">Consistency</div><div class="text-xs text-[var(--muted)] mt-0.5">How steady your rhythm was</div></div>
+          <div class="border border-[var(--border)] rounded-xl px-5 py-4"><div class="mono text-2xl sm:text-3xl text-[var(--ink)]" id="pCorrect">0</div><div class="text-sm font-medium mt-1">Correct</div><div class="text-xs text-[var(--muted)] mt-0.5">Letters typed correctly</div></div>
+          <div class="border border-[var(--border)] rounded-xl px-5 py-4"><div class="mono text-2xl sm:text-3xl text-[var(--ink)]" id="pIncorrect">0</div><div class="text-sm font-medium mt-1">Incorrect</div><div class="text-xs text-[var(--muted)] mt-0.5">Letters typed wrong</div></div>
+          <div class="border border-[var(--border)] rounded-xl px-5 py-4"><div class="mono text-2xl sm:text-3xl text-[var(--ink)]" id="pExtra">0</div><div class="text-sm font-medium mt-1">Extra</div><div class="text-xs text-[var(--muted)] mt-0.5">Letters typed beyond the word</div></div>
+          <div class="border border-[var(--border)] rounded-xl px-5 py-4"><div class="mono text-2xl sm:text-3xl text-[var(--ink)]" id="pMissed">0</div><div class="text-sm font-medium mt-1">Missed</div><div class="text-xs text-[var(--muted)] mt-0.5">Letters skipped</div></div>
+          <div class="border border-[var(--border)] rounded-xl px-5 py-4"><div class="mono text-2xl sm:text-3xl text-[var(--ink)]" id="pBackspaces">0</div><div class="text-sm font-medium mt-1">Backspaces</div><div class="text-xs text-[var(--muted)] mt-0.5">Times you pressed Backspace</div></div>
+          <div class="border border-[var(--border)] rounded-xl px-5 py-4"><div class="mono text-2xl sm:text-3xl text-[var(--ink)]" id="pCtrlBackspaces">0</div><div class="text-sm font-medium mt-1">Ctrl+Backspaces</div><div class="text-xs text-[var(--muted)] mt-0.5">Times you pressed Ctrl + Backspace</div></div>
+          <div class="border border-[var(--border)] rounded-xl px-5 py-4"><div class="mono text-2xl sm:text-3xl text-[var(--ink)]" id="pWords">0</div><div class="text-sm font-medium mt-1">Words</div><div class="text-xs text-[var(--muted)] mt-0.5" id="pWordsDesc">Words in the passage</div></div>
+          <div class="border border-[var(--border)] rounded-xl px-5 py-4"><div class="mono text-2xl sm:text-3xl text-[var(--ink)]" id="pLetters">0</div><div class="text-sm font-medium mt-1">Letters</div><div class="text-xs text-[var(--muted)] mt-0.5" id="pLettersDesc">Letters in the passage</div></div>
+        </div>
+
+        <!-- what the person typed -->
+        <div class="mt-7">
+          <h2 class="text-lg font-semibold mb-2">What you typed</h2>
+          <p id="pTypedLegend" class="hidden text-xs text-[var(--muted)] mb-2"></p>
+          <div id="pTyped" class="mono text-base leading-relaxed whitespace-pre-wrap break-words bg-[var(--bg)] border border-[var(--border)] rounded-xl px-4 py-3 max-h-64 overflow-y-auto"></div>
+        </div>
+
+        <!-- free type only: what the spellchecker did, word by word, so the method can be checked -->
+        <div id="pBreakdown" class="hidden mt-7">
+          <h2 class="text-lg font-semibold mb-1">Spellcheck breakdown</h2>
+          <p class="text-sm text-[var(--muted)] mb-4" id="pBreakdownNote"></p>
+          <div class="overflow-x-auto">
+            <table class="w-full text-base border-collapse">
+              <thead>
+                <tr class="text-left text-sm text-[var(--muted)] border-b border-[var(--border)]">
+                  <th class="py-2 pr-4">You typed</th>
+                  <th class="py-2 pr-4">Read as</th>
+                  <th class="py-2 pr-4">Correct</th>
+                  <th class="py-2 pr-4">Incorrect</th>
+                  <th class="py-2 pr-4">Extra</th>
+                  <th class="py-2 pr-4">Missed</th>
+                </tr>
+              </thead>
+              <tbody id="pBreakdownBody"></tbody>
+            </table>
+          </div>
+          <p class="text-sm text-[var(--muted)] mt-4" id="pUnchecked"></p>
+        </div>
+
+        <div class="mt-7">
+          <button type="button" id="practiceAgain" class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 transition-opacity">Try again</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<script src="common.js"></script>
+<script src="dictionary.js"></script>
+<script src="spellcheck.js"></script>
+<script src="practice.js"></script>
+</body>
+</html>
