@@ -74,6 +74,10 @@
           <span class="block text-sm text-[var(--muted)] mb-2">Nickname (optional)</span>
           <input type="text" id="testNickname" class="w-full bg-[var(--bg)] border border-[var(--border)] rounded-xl px-4 py-3.5 text-base focus:border-[var(--ink)] outline-none" />
         </label>
+        <label class="flex items-start gap-3 mb-7 text-sm cursor-pointer">
+          <input type="checkbox" id="testConsent" class="mt-0.5 w-4 h-4 shrink-0" />
+          <span class="text-[var(--muted)]">I understand that when I finish, a copy of my results is saved online so the Identity page can recognize me. It includes my name and every key I press and when, so anything I write in the written answers can be read from it. I won't type anything private.</span>
+        </label>
         <button type="button" id="testBegin" disabled class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">Begin test</button>
       </div>
 
@@ -128,15 +132,29 @@
         <p class="text-sm text-[var(--muted)] mt-4">or press Enter</p>
       </div>
 
-      <!-- ---- screen 4: finished — CSV download ---- -->
+      <!-- ---- screen 4: finished — saved online + optional CSV download ---- -->
       <div id="testDone" class="hidden">
         <h1 class="text-2xl sm:text-3xl font-semibold mb-2">Enrollment complete</h1>
-        <p class="text-base text-[var(--muted)] mb-7" id="testDoneSummary"></p>
-        <div class="flex items-center gap-4 flex-wrap">
-          <button type="button" id="testDownload" class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 transition-opacity">Download CSV</button>
-          <button type="button" id="testAgain" class="border border-[var(--border)] text-[var(--text)] rounded-full px-7 py-3.5 text-base hover:border-[var(--ink)] transition-colors">Enroll another person</button>
+        <p class="text-base text-[var(--muted)] mb-6" id="testDoneSummary"></p>
+
+        <div class="flex items-center gap-3 flex-wrap mb-7">
+          <span id="testSaveStatus" role="status" aria-live="polite" class="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium">
+            <span id="testSaveSpinner" class="hidden w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
+            <span id="testSaveIcon" class="hidden"></span>
+            <span id="testSaveText">Saving…</span>
+          </span>
+          <button type="button" id="testSaveRetry" class="hidden border border-[var(--border)] rounded-full px-4 py-2 text-sm hover:border-[var(--ink)] transition-colors">Try saving again</button>
         </div>
-        <p class="text-sm text-[var(--muted)] mt-5">Save this file — upload it on the <a href="identity.html" class="underline hover:text-[var(--ink)]">Identity page</a> to test recognition against it.</p>
+
+        <div class="flex items-center gap-4 flex-wrap">
+          <button type="button" id="testDownload" class="group inline-flex items-center gap-2.5 rounded-full border border-[var(--ink)] text-[var(--ink)] px-6 py-3 text-base font-medium shadow-sm hover:bg-[var(--ink)] hover:text-white hover:shadow-md active:scale-[0.98] transition-all duration-150">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="transition-transform duration-150 group-hover:translate-y-0.5"><path d="M12 4v11" /><polyline points="7 11 12 16 17 11" /><path d="M5 20h14" /></svg>
+            <span>Download CSV</span>
+            <span class="mono text-xs opacity-70" id="testDownloadSize"></span>
+          </button>
+          <button type="button" id="testAgain" class="rounded-full px-5 py-3 text-base text-[var(--muted)] hover:text-[var(--ink)] transition-colors">Enroll another person</button>
+        </div>
+        <p class="text-sm text-[var(--muted)] mt-5">Your saved results are picked up by the <a href="identity.html" class="underline hover:text-[var(--ink)]">Identity page</a> automatically. Nothing needs to be uploaded. The download is just your own copy.</p>
       </div>
 
     </div>
@@ -145,6 +163,8 @@
 </div>
 
 <script src="common.js"></script>
+<script src="config.js"></script>
+<script src="api.js"></script>
 <script src="dictionary.js"></script>
 <script src="spellcheck.js"></script>
 <script src="test.js"></script>

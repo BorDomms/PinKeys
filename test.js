@@ -1,6 +1,6 @@
 /* ==============================================================
    PINKEYS — test.js
-   Test page: enrollment battery + CSV export.
+   Test page: enrollment battery, saved online + CSV download.
    Requires common.js (loaded first in the HTML).
    ============================================================== */
 
@@ -12,6 +12,7 @@ const testIntro = $("testIntro");
 const testFirstName = $("testFirstName");
 const testLastName = $("testLastName");
 const testNickname = $("testNickname");
+const testConsent = $("testConsent");
 const testBeginBtn = $("testBegin");
 const testRunning = $("testRunning");
 const testRestartBtn = $("testRestart");
@@ -36,6 +37,8 @@ const testDone = $("testDone");
 const testDoneSummary = $("testDoneSummary");
 const testDownloadBtn = $("testDownload");
 const testAgainBtn = $("testAgain");
+const testSaveStatus = $("testSaveStatus"), testSaveSpinner = $("testSaveSpinner"), testSaveIcon = $("testSaveIcon");
+const testSaveText = $("testSaveText"), testSaveRetry = $("testSaveRetry"), testDownloadSize = $("testDownloadSize");
 
 /* -------------------------------------------------------------
    7. TEST TAB (enrollment)
@@ -75,6 +78,9 @@ let testIdx = 0;
 let testLog = [];
 let testPending = null;
 let testSessionId = null;
+let testCsvText = "";    // the finished CSV: what Download gives you and what is saved online
+
+const TEST_CSV_HEADERS = ["session_id", "first_name", "last_name", "nickname", "date_recorded", "task_type", "task_index", "passage_text", "key", "keydown_time", "keyup_time", "dwell", "flight", "value", "category", "test_kind"];
 
 const testController = createTypingTaskController({
   stageEl: testStage, inputEl: testInput,
@@ -91,14 +97,16 @@ function showTestPhase(phase) {
   testDone.classList.toggle("hidden", phase !== "done");
 }
 
-// "Begin test" only enables once both name fields are filled in
+// "Begin test" only enables once both name fields are filled in and the notice is accepted
 function updateTestBeginState() {
-  testBeginBtn.disabled = !(testFirstName.value.trim() && testLastName.value.trim());
+  testBeginBtn.disabled = !(testFirstName.value.trim() && testLastName.value.trim() && testConsent.checked);
 }
+testConsent.addEventListener("change", updateTestBeginState);
 testFirstName.addEventListener("input", updateTestBeginState);
 testLastName.addEventListener("input", updateTestBeginState);
 
 testBeginBtn.addEventListener("click", () => {
+  PinkeysApi.ping();   // a sleeping free server takes a while to wake; start that now, so it is ready at the end
   testParticipant = { fn: testFirstName.value.trim(), ln: testLastName.value.trim(), nn: testNickname.value.trim() };
   testSessionId = uid();
   testTasks = buildTaskList();
@@ -200,6 +208,9 @@ function continueAfterTestTask() {
     testDoneSummary.textContent =
       `${testLog.length} rows recorded across ${testTasks.length} tests for ` +
       `${testParticipant.fn} ${testParticipant.ln} (including ${testLog.filter((r) => r.task_type === "METRIC").length} metric rows).`;
+    testCsvText = buildCsvText(testLog, TEST_CSV_HEADERS);
+    testDownloadSize.textContent = formatBytes(new Blob([testCsvText]).size);
+    saveTestToCloud();
   } else {
     testIdx++;
     showTestPhase("running");
@@ -210,11 +221,55 @@ testContinueBtn.addEventListener("click", continueAfterTestTask);
 testRestartBtn.addEventListener("click", () => testController.restart());
 
 testDownloadBtn.addEventListener("click", () => {
-  const headers = ["session_id", "first_name", "last_name", "nickname", "date_recorded", "task_type", "task_index", "passage_text", "key", "keydown_time", "keyup_time", "dwell", "flight", "value", "category", "test_kind"];
-  downloadCsv(`pinkeys_${testParticipant.fn}_${testParticipant.ln}_${Date.now()}.csv`, testLog, headers);
+  downloadTextFile(`pinkeys_${testParticipant.fn}_${testParticipant.ln}_${Date.now()}.csv`, testCsvText);
 });
+
+/* -------------------------------------------------------------
+   SAVE ONLINE
+   When the last test is done, the finished CSV is sent to the API's
+   public /collect endpoint, which stores it in Supabase and folds
+   this person into the model. No key is involved. If the free server
+   is asleep we wake it first. A failed save can be retried, and the
+   Download button always works as a fallback.
+   ------------------------------------------------------------- */
+const formatBytes = (n) => (n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + " KB" : (n / 1048576).toFixed(1) + " MB");
+
+const SAVE_LOOK = {
+  saving: { color: "var(--muted)", icon: "" },
+  saved:  { color: "var(--correct)", icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 12 10 18 20 6" /></svg>' },
+  failed: { color: "var(--incorrect)", icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>' },
+};
+function setSaveStatus(state, text) {
+  const look = SAVE_LOOK[state];
+  testSaveStatus.style.color = look.color;
+  testSaveStatus.style.borderColor = look.color;
+  testSaveSpinner.classList.toggle("hidden", state !== "saving");
+  testSaveIcon.classList.toggle("hidden", !look.icon);
+  testSaveIcon.innerHTML = look.icon;
+  testSaveText.textContent = text;
+  testSaveRetry.classList.toggle("hidden", state !== "failed");
+  testSaving = state === "saving";
+}
+let testSaving = false;
+window.addEventListener("beforeunload", (e) => { if (testSaving) { e.preventDefault(); e.returnValue = ""; } });
+
+async function saveTestToCloud() {
+  if (testSaving) return;
+  setSaveStatus("saving", "Saving your results online…");
+  try {
+    await PinkeysApi.wake({ onTick: (s) => { if (s >= 3) setSaveStatus("saving", `Waking the server… ${s}s (a free server can take up to a minute)`); } });
+    setSaveStatus("saving", "Saving your results online…");
+    await PinkeysApi.collect(testCsvText);
+    setSaveStatus("saved", "Saved online. You'll show up on the Identity page shortly.");
+  } catch (err) {
+    setSaveStatus("failed", "Not saved: " + err.message + " You can still download your CSV.");
+  }
+}
+testSaveRetry.addEventListener("click", saveTestToCloud);
+
+PinkeysApi.ping();   // wake a sleeping server while the person fills in the form
 testAgainBtn.addEventListener("click", () => {
-  testFirstName.value = ""; testLastName.value = ""; testNickname.value = "";
+  testFirstName.value = ""; testLastName.value = ""; testNickname.value = ""; testConsent.checked = false; testCsvText = "";
   updateTestBeginState();
   showTestPhase("intro");
 });

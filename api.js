@@ -1,49 +1,38 @@
 /* ==============================================================
    PINKEYS — api.js
-   Small client for the Python identification API (pinkeys_api/).
-   Only the Identity page loads this. Settings are remembered in
-   the browser: on/off + URL in localStorage, the API key in
-   sessionStorage (forgotten when the tab closes).
+   Key-free client for the Python identification API.
+   The website only ever calls three PUBLIC endpoints:
+     GET  /health    is it awake, is a model loaded, how many people
+     POST /identify  who does this typing look like
+     POST /collect   save one finished test (CSV text) for enrollment
+   Retraining, reloading, profiles and reset are admin-only and need
+   a key that lives on Render — never in this website.
+   The address comes from config.js. If it is still the placeholder,
+   a page opened from localhost / a file falls back to localhost:8000.
    ============================================================== */
 const PinkeysApi = (() => {
-  const DEFAULT_URL = "http://localhost:8000";
-  // Merely touching localStorage can throw (blocked storage, some file:// setups), so every access is guarded.
-  const store = (name) => { try { return window[name]; } catch { return null; } };
-  const get = (name, key, fallback) => { try { const v = store(name).getItem(key); return v == null ? fallback : v; } catch { return fallback; } };
-  const put = (name, key, value) => { try { store(name).setItem(key, value); } catch { /* storage blocked: settings just won't persist */ } };
+  const PLACEHOLDER = /YOUR-SERVICE-NAME|REPLACE/i;
 
-  // The live settings are held in memory; storage is only used to remember them between visits,
-  // so everything still works when the browser blocks storage.
-  let current = null;
-  function settings() {
-    if (!current) {
-      current = {
-        enabled: get("localStorage", "pinkeys.api.enabled", "0") === "1",
-        url: get("localStorage", "pinkeys.api.url", DEFAULT_URL),
-        key: get("sessionStorage", "pinkeys.api.key", ""),
-      };
-    }
-    return { ...current };
+  function baseUrl() {
+    const cfg = String((window.PINKEYS_CONFIG && window.PINKEYS_CONFIG.API_URL) || "").trim().replace(/\/+$/, "");
+    if (cfg && !PLACEHOLDER.test(cfg)) return cfg;
+    const h = location.hostname;
+    if (location.protocol === "file:" || h === "localhost" || h === "127.0.0.1") return "http://localhost:8000";
+    return "";
   }
-  function save(s) {
-    current = { enabled: !!s.enabled, url: s.url || DEFAULT_URL, key: s.key || "" };
-    put("localStorage", "pinkeys.api.enabled", current.enabled ? "1" : "0");
-    put("localStorage", "pinkeys.api.url", current.url);
-    put("sessionStorage", "pinkeys.api.key", current.key);
-  }
+  const configured = () => !!baseUrl();
 
-  // one place for every request: base URL, key header, timeout, readable errors
+  // one place for every request: base URL, timeout, readable errors
   async function call(path, options = {}, timeoutMs = 15000) {
-    const s = settings();
+    const base = baseUrl();
+    if (!base) throw new Error("The API address isn't set. Put your Render address in config.js.");
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
-    const headers = { ...(options.headers || {}) };
-    if (s.key) headers["X-API-Key"] = s.key;
     let res;
     try {
-      res = await fetch(s.url.replace(/\/+$/, "") + path, { ...options, headers, signal: ctl.signal });
+      res = await fetch(base + path, { ...options, signal: ctl.signal });
     } catch (e) {
-      throw new Error(e && e.name === "AbortError" ? "The API took too long to answer." : `Can't reach the API at ${s.url}. Is it running?`);
+      throw new Error(e && e.name === "AbortError" ? "The API took too long to answer." : "Can't reach the API. It may be asleep or offline.");
     } finally {
       clearTimeout(timer);
     }
@@ -56,57 +45,61 @@ const PinkeysApi = (() => {
       throw err;
     }
     if (body === null) {   // 200 OK but not JSON: e.g. a sleeping host's loading page
-      throw new Error("The server answered, but not with API data. If it is a free Render server it may still be waking up: press Wake up API.");
+      throw new Error("The server answered, but not with API data. It may still be waking up.");
     }
     return body;
   }
 
   // the logger records a few extra fields; the API only needs these three
   const clean = (events) => events.map(({ key, type, t }) => ({ key, type, t }));
-
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  // Wake a sleeping host (Render's free tier stops a service after ~15 idle minutes; the next request starts it,
-  // which takes up to about a minute). Two steps:
-  //  1. one plain GET, sent "no-cors": a sleeping host answers with its own loading page, which has no CORS
-  //     headers and would otherwise make the browser refuse the request. The request still reaches the host.
-  //     (A GET on purpose: sleeping Render services are reported to wake on GET but not always on POST.)
-  //  2. poll /health until the real API answers.
-  async function wake({ onTick = () => {}, timeoutMs = 150000, intervalMs = 4000 } = {}) {
-    const base = settings().url.replace(/\/+$/, "");
-    const started = Date.now();
+  // Fire-and-forget nudge for a sleeping host (Render's free tier stops after ~15 idle minutes).
+  // "no-cors" because a sleeping host answers with its own loading page, which has no CORS headers;
+  // the request still reaches the host and starts it.
+  function ping() {
+    const base = baseUrl();
+    if (!base) return;
     try { fetch(base + "/health", { mode: "no-cors", cache: "no-store" }).catch(() => {}); } catch { /* ignore */ }
+  }
+
+  // Wake the host and wait until the real API answers /health (up to ~2.5 minutes).
+  async function wake({ onTick = () => {}, timeoutMs = 150000, intervalMs = 4000 } = {}) {
+    if (!configured()) throw new Error("The API address isn't set. Put your Render address in config.js.");
+    const started = Date.now();
+    ping();
     for (;;) {
       onTick(Math.round((Date.now() - started) / 1000));
       try {
         const h = await call("/health", { cache: "no-store" }, 8000);
-        if (h && h.status === "ok") return h;                 // the loading page is HTML, so h is null until the API is up
+        if (h && h.status === "ok") return h;
       } catch (err) {
-        if (err.status === 404) throw new Error("That address answered, but it isn't the Pinkeys API. Check the URL.");
+        if (err.status === 404) throw new Error("That address answered, but it isn't the Pinkeys API. Check config.js.");
         /* anything else: still waking up, keep trying */
       }
       if (Date.now() - started + intervalMs > timeoutMs) {
-        throw new Error("The API did not wake up in time. Press Wake up API to try again, and check the URL and that the service is deployed.");
+        throw new Error("The API did not wake up in time. Check that the Render service is deployed and the address in config.js is right.");
       }
       await sleep(intervalMs);
     }
   }
 
   return {
-    settings, save, wake,
-    health: () => call("/health", {}, 4000),
-    reload: () => call("/reload", { method: "POST" }, 60000),   // ask the server to fetch the newest model from Supabase
-    enroll(files) {
-      const fd = new FormData();
-      for (const f of files) fd.append("files", f, f.name);
-      return call("/enroll", { method: "POST", body: fd }, 120000);   // training can take a while
-    },
+    configured, ping, wake,
+    health: () => call("/health", { cache: "no-store" }, 8000),
     // segments = one array of logger events per typed passage
     identify(segments, topK = 5) {
       return call("/identify", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ segments: segments.map(clean), top_k: topK }),
       });
+    },
+    // save one finished test: the same CSV text the Download button produces
+    collect(csvText) {
+      return call("/collect", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ csv: csvText }),
+      }, 90000);
     },
   };
 })();

@@ -55,32 +55,25 @@
   <main id="page-identity">
     <div class="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-8 sm:p-10 lg:p-12">
 
-      <!-- ---- screen 1: upload reference CSVs ---- -->
-      <div id="idUpload">
-        <h1 class="text-2xl sm:text-3xl font-semibold mb-2">Identity check</h1>
-        <p class="text-base text-[var(--muted)] mb-7">
-          Upload one or more enrollment CSVs exported from the Test page, then type 3 short passages live.
-          We'll compare your live typing against each stored profile.
-        </p>
-        <!-- optional: smarter matching by the Python API (pinkeys_api/) running on this machine -->
-        <div class="border border-[var(--border)] rounded-xl p-4 mb-6">
-          <label class="flex items-center gap-2 text-base cursor-pointer">
-            <input type="checkbox" id="idApiOn" class="w-4 h-4" />
-            <span class="font-medium">Use the Python API</span>
-            <span class="text-sm text-[var(--muted)]">— several models combined, live guess while typing</span>
-          </label>
-          <div id="idApiFields" class="hidden mt-3 flex flex-wrap gap-3 items-center">
-            <input id="idApiUrl" type="text" placeholder="http://localhost:8000" class="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm w-64 outline-none focus:border-[var(--ink)]" />
-            <input id="idApiKey" type="password" placeholder="API key (only if you set one)" class="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm w-56 outline-none focus:border-[var(--ink)]" />
-            <button type="button" id="idApiWake" class="bg-[var(--ink)] text-white rounded-full px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50 transition-opacity">Wake up API</button>
-            <button type="button" id="idApiReload" class="border border-[var(--border)] rounded-full px-4 py-2 text-sm hover:border-[var(--ink)] disabled:opacity-50 transition-colors">Load newest model</button>
-            <button type="button" id="idApiTest" class="border border-[var(--border)] rounded-full px-4 py-2 text-sm hover:border-[var(--ink)] disabled:opacity-50 transition-colors">Test connection</button>
+      <!-- ---- screen 1: start (the API wakes up on its own; nothing to configure or upload) ---- -->
+      <div id="idStart">
+        <div class="flex items-center justify-between gap-4 flex-wrap mb-2">
+          <h1 class="text-2xl sm:text-3xl font-semibold">Identity check</h1>
+          <div class="flex items-center gap-2">
+            <span id="idApiBadge" role="status" aria-live="polite" class="inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium">
+              <span id="idApiSpinner" class="hidden w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
+              <span id="idApiDot" class="w-2.5 h-2.5 rounded-full bg-current"></span>
+              <span id="idApiLabel">starting…</span>
+            </span>
+            <button type="button" id="idApiRetry" class="hidden border border-[var(--border)] rounded-full px-4 py-1.5 text-sm hover:border-[var(--ink)] transition-colors">Retry</button>
           </div>
-          <p id="idApiStatus" class="text-sm text-[var(--muted)] mt-2"></p>
         </div>
-        <input type="file" id="idFileInput" accept=".csv" multiple class="text-base mb-3" />
-        <p class="text-sm text-[var(--muted)] mb-7" id="idUploadStatus"></p>
-        <button type="button" id="idContinue" disabled class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">Continue to live test</button>
+        <p class="text-base text-[var(--muted)] mb-2">
+          Type 3 short passages and the system will guess who you are from how you type.
+          Everyone who has finished the Test page is already included.
+        </p>
+        <p id="idApiDetail" class="text-sm text-[var(--muted)] mb-7 min-h-[1.25rem]"></p>
+        <button type="button" id="idContinue" disabled class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">Start live test</button>
       </div>
 
       <!-- ---- screen 2: one live sample in progress ---- -->
@@ -123,50 +116,23 @@
       <!-- ---- screen 4: ranked results ---- -->
       <div id="idResult" class="hidden">
         <h1 class="text-2xl sm:text-3xl font-semibold mb-2">Closest match</h1>
-        <p class="text-base text-[var(--muted)] mb-7" id="idResultSummary"></p>
-        <div id="idApiResult" class="hidden mb-9">
-          <h2 class="text-lg font-semibold mb-1">Python API</h2>
-          <p class="text-base mb-4" id="idApiSummary"></p>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm border-collapse">
-              <thead>
-                <tr class="text-left text-xs text-[var(--muted)] border-b border-[var(--border)]">
-                  <th class="py-2 pr-3">Rank</th><th class="py-2 pr-3">Name</th><th class="py-2 pr-3">Probability</th>
-                  <th class="py-2 pr-3">Pair timing</th><th class="py-2 pr-3">LDA</th><th class="py-2 pr-3">SVM</th>
-                  <th class="py-2 pr-3">Forest</th><th class="py-2 pr-3">k-NN</th><th class="py-2 pr-3">Distance</th>
-                </tr>
-              </thead>
-              <tbody id="idApiBody"></tbody>
-            </table>
-          </div>
-          <p class="text-xs text-[var(--muted)] mt-2" id="idApiNote"></p>
-          <h2 class="text-lg font-semibold mt-8 mb-1">In-browser comparison</h2>
-        </div>
+        <p class="text-base mb-7" id="idApiSummary">Asking the API…</p>
         <div class="overflow-x-auto">
-          <table class="w-full text-base border-collapse">
+          <table class="w-full text-sm border-collapse">
             <thead>
-              <tr class="text-left text-sm text-[var(--muted)] border-b border-[var(--border)]">
-                <th class="py-3 pr-4">Rank</th>
-                <th class="py-3 pr-4">Name</th>
-                <th class="py-3 pr-4">Similarity</th>
-                <th class="py-3 pr-4">Mean dwell</th>
-                <th class="py-3 pr-4">Mean flight</th>
-                <th class="py-3 pr-4">WPM</th>
-                <th class="py-3 pr-4">Accuracy</th>
+              <tr class="text-left text-xs text-[var(--muted)] border-b border-[var(--border)]">
+                <th class="py-2 pr-3">Rank</th><th class="py-2 pr-3">Name</th><th class="py-2 pr-3">Probability</th>
+                <th class="py-2 pr-3">Pair timing</th><th class="py-2 pr-3">LDA</th><th class="py-2 pr-3">SVM</th>
+                <th class="py-2 pr-3">Forest</th><th class="py-2 pr-3">k-NN</th><th class="py-2 pr-3">Distance</th>
               </tr>
             </thead>
-            <!-- rows are the one part of this table that must be built in JS —
-                 the ranking depends on whatever CSVs were just uploaded -->
-            <tbody id="idResultBody"></tbody>
+            <tbody id="idApiBody"></tbody>
           </table>
         </div>
+        <p class="text-xs text-[var(--muted)] mt-2" id="idApiNote"></p>
         <div class="mt-7">
           <button type="button" id="idRunAgain" class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 transition-opacity">Run another check</button>
         </div>
-        <p class="text-sm text-[var(--muted)] mt-5">
-          Similarity is a simple weighted distance over dwell, flight, DD, UU, backspace rate, and WPM —
-          a starting point, not a validated classifier.
-        </p>
       </div>
 
     </div>
@@ -175,6 +141,7 @@
 </div>
 
 <script src="common.js"></script>
+<script src="config.js"></script>
 <script src="api.js"></script>
 <script src="identity.js"></script>
 </body>

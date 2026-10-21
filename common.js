@@ -155,45 +155,25 @@ function escapeChar(ch) {
   return ch;
 }
 
-/* CSV read/write — this is how enrollment data leaves the browser
-   (download) and how the Identity tab re-hydrates it (upload/parse).
-   NOTE on the time_ms column: it stores the gap SINCE THE PREVIOUS
-   EVENT in that same task, not a running clock — see section 7's
-   onTestTaskDone() for where that conversion happens, and
-   buildProfilesFromRows() in section 8 for how it's reconstructed
-   back into an absolute timeline before feature math runs on it. */
+/* CSV writing — used by the Test page both for the Download button and for the copy
+   saved online (the same text, so they can never differ). The time columns hold absolute
+   ms since each task's first keystroke; the API rebuilds everything it needs from them. */
 const csvEsc = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
 
-function parseCsv(text) {
-  const rows = [];
-  let row = [], field = "", inQ = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inQ) {
-      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
-      else field += c;
-    } else {
-      if (c === '"') inQ = true;
-      else if (c === ",") { row.push(field); field = ""; }
-      else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
-      else if (c === "\r") { /* skip */ }
-      else field += c;
-    }
-  }
-  if (field.length || row.length) { row.push(field); rows.push(row); }
-  return rows;
-}
-
-function downloadCsv(filename, rows, headers) {
+function buildCsvText(rows, headers) {
   const lines = [headers.join(",")];
   for (const r of rows) lines.push(headers.map((h) => csvEsc(r[h])).join(","));
-  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  return lines.join("\n");
+}
+
+function downloadTextFile(filename, text, mime = "text/csv") {
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  a.href = URL.createObjectURL(new Blob([text], { type: mime }));
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 /* -------------------------------------------------------------
@@ -210,8 +190,6 @@ function downloadCsv(filename, rows, headers) {
                      the CSV's delta-based time_ms column, which
                      only affects the exported file format, not
                      this in-memory computation.
-   dist()            distance between two feature vectors, used
-                     by the Identity tab to rank stored profiles
    ------------------------------------------------------------- */
 function makeLogger() {
   let events = [], t0 = null, down = new Set();
@@ -320,53 +298,6 @@ function computeFeatures(events, taskStats = null) {
     incorrect: taskStats ? taskStats.incorrect : null,
     extra:     taskStats ? taskStats.extra     : null,
     missed:    taskStats ? taskStats.missed    : null,
-  };
-}
-
-// weighted Euclidean distance between two feature vectors (Identity tab ranking)
-// ---- Identity-tab distance metric ---------------------------------------
-// Features used for ranking. Listed explicitly so the order stays stable
-// between z-scoring and diffing.
-const ID_FEATURE_KEYS = [
-  "meanDwell", "stdDwell",
-  "meanFlight", "meanDD", "meanUU",
-  "backspaceRate", "wpm", "consistency",
-  "accuracy", "correct", "incorrect", "extra", "missed",
-];
-
-// Pull a profile's features into the fixed order above. Missing values stay
-// as null so pairwise comparison can skip them.
-function idFeatureVector(f) {
-  return ID_FEATURE_KEYS.map((k) => (f && Number.isFinite(f[k])) ? f[k] : null);
-}
-
-// Builds a dist(a, b) closure that z-scores each feature against the
-// uploaded cohort before diffing, so no single large-range feature
-// (like raw correct/incorrect counts) can dominate the ranking.
-// Features missing on EITHER side are skipped — only shared signals count.
-function makeZScoredDist(profiles) {
-  const vectors = profiles.map((p) => idFeatureVector(p.features));
-  const mean = [], std = [];
-  for (let j = 0; j < ID_FEATURE_KEYS.length; j++) {
-    const col = vectors.map((v) => v[j]).filter((x) => x !== null);
-    if (col.length < 2) { mean.push(0); std.push(1); continue; }
-    const m = col.reduce((a, b) => a + b, 0) / col.length;
-    const s = Math.sqrt(col.reduce((a, b) => a + (b - m) ** 2, 0) / col.length) || 1;
-    mean.push(m); std.push(s);
-  }
-
-  return (featA, featB) => {
-    const va = idFeatureVector(featA);
-    const vb = idFeatureVector(featB);
-    let sum = 0, compared = 0;
-    for (let j = 0; j < ID_FEATURE_KEYS.length; j++) {
-      if (va[j] === null || vb[j] === null) continue;  // skip missing features
-      const za = (va[j] - mean[j]) / std[j];
-      const zb = (vb[j] - mean[j]) / std[j];
-      sum += (za - zb) ** 2;
-      compared++;
-    }
-    return compared ? Math.sqrt(sum / compared) : Infinity;
   };
 }
 
