@@ -17,7 +17,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="styles.css" />
 </head>
-<body class="min-h-screen">
+<body class="min-h-screen" data-page="test">
 
 <!-- Recording indicator — hidden until the first real keystroke of a task
      (see "lazy start" in script.js section 5), so it only appears once
@@ -44,40 +44,57 @@
       <span class="font-semibold tracking-tight text-base">Pinkeys</span>
     </div>
 
-    <nav class="relative flex bg-[var(--surface)] border border-[var(--border)] rounded-full p-[3px] min-w-[260px]" id="nav">
+    <div class="flex items-center gap-3 flex-wrap" id="headerRight">
+      <span class="text-sm text-[var(--muted)]">Mode:</span>
+      <nav class="relative flex bg-[var(--surface)] border border-[var(--border)] rounded-full p-[3px] min-w-[260px]" id="nav">
       <div class="absolute top-[3px] bottom-[3px] w-[calc(33.333%-6px)] rounded-full bg-[var(--ink)]" id="navPill" style="left: calc(1 * 33.333% + 3px)"></div>
       <a href="index.html" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-[var(--muted)]">Practice</a>
       <a href="test.html" aria-current="page" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-white">Test</a>
       <a href="identity.html" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-[var(--muted)]">Identity</a>
     </nav>
+      <div id="howtoMount"></div>
+      <div id="userMount"></div>
+    </div>
   </header>
 
   <main id="page-test">
     <div class="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-8 sm:p-10 lg:p-12">
 
-      <!-- ---- screen 1: name intake ---- -->
-      <div id="testIntro">
-        <h1 class="text-2xl sm:text-3xl font-semibold mb-2">Enrollment test</h1>
-        <div class="banner mt-4 mb-7">
-          This takes a while — 20 tasks in a random order: 10 quotes, 3 short passages, 3 longer passages, and 4 short written answers.
-          Find somewhere you can focus before you start.
-        </div>
-        <label class="block mb-5">
-          <span class="block text-sm text-[var(--muted)] mb-2">First name</span>
-          <input type="text" id="testFirstName" class="w-full bg-[var(--bg)] border border-[var(--border)] rounded-xl px-4 py-3.5 text-base focus:border-[var(--ink)] outline-none" />
-        </label>
-        <label class="block mb-5">
-          <span class="block text-sm text-[var(--muted)] mb-2">Last name</span>
-          <input type="text" id="testLastName" class="w-full bg-[var(--bg)] border border-[var(--border)] rounded-xl px-4 py-3.5 text-base focus:border-[var(--ink)] outline-none" />
-        </label>
-        <label class="block mb-5">
-          <span class="block text-sm text-[var(--muted)] mb-2">Nickname (optional)</span>
-          <input type="text" id="testNickname" class="w-full bg-[var(--bg)] border border-[var(--border)] rounded-xl px-4 py-3.5 text-base focus:border-[var(--ink)] outline-none" />
-        </label>
-        <label class="flex items-start gap-3 mb-7 text-sm cursor-pointer">
+      <!-- ---- not logged in: the Test needs an account ---- -->
+      <div id="testGate" class="hidden text-center py-8">
+        <h1 class="text-2xl sm:text-3xl font-semibold mb-2">Log in to take the test</h1>
+        <p class="text-base text-[var(--muted)] mb-6">Your results are saved to your account so the Identity page can recognize you.</p>
+        <button type="button" id="testGateLogin" class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 transition-opacity">Log in or create an account</button>
+      </div>
+
+      <!-- ---- screen 1: instructions, warning, regulations (all text comes from content.js) ---- -->
+      <div id="testIntro" class="hidden">
+        <h1 class="text-2xl sm:text-3xl font-semibold mb-1" id="testIntroTitle">Enrollment test</h1>
+        <p class="text-sm text-[var(--muted)] mb-6" id="testAs"></p>
+
+        <section class="mb-5">
+          <h2 class="text-lg font-semibold mb-2" id="testInstructionsTitle">Instructions</h2>
+          <div class="space-y-2 text-base leading-relaxed" id="testInstructions"></div>
+        </section>
+        <section class="banner mb-5">
+          <h2 class="text-lg font-semibold mb-2" id="testWarningTitle">Please read</h2>
+          <div class="space-y-2 text-base leading-relaxed" id="testWarning"></div>
+        </section>
+        <section class="mb-7">
+          <h2 class="text-lg font-semibold mb-2" id="testRegulationsTitle">Regulations</h2>
+          <div class="space-y-2 text-base leading-relaxed" id="testRegulations"></div>
+        </section>
+
+        <label class="flex items-start gap-3 mb-4 text-sm cursor-pointer">
           <input type="checkbox" id="testConsent" class="mt-0.5 w-4 h-4 shrink-0" />
-          <span class="text-[var(--muted)]">I understand that when I finish, a copy of my results is saved online so the Identity page can recognize me. It includes my name and every key I press and when, so anything I write in the written answers can be read from it. I won't type anything private.</span>
+          <span class="text-[var(--muted)]" id="testConsentText"></span>
         </label>
+        <!-- only for people who already have saved data -->
+        <label id="testReplaceRow" class="hidden flex items-start gap-3 mb-4 text-sm cursor-pointer border border-[var(--incorrect)] rounded-xl px-4 py-3">
+          <input type="checkbox" id="testReplace" class="mt-0.5 w-4 h-4 shrink-0" />
+          <span id="testReplaceText"></span>
+        </label>
+        <p class="text-sm min-h-[1.25rem] mb-4" id="testIntroMsg"></p>
         <button type="button" id="testBegin" disabled class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">Begin test</button>
       </div>
 
@@ -144,6 +161,7 @@
             <span id="testSaveText">Saving…</span>
           </span>
           <button type="button" id="testSaveRetry" class="hidden border border-[var(--border)] rounded-full px-4 py-2 text-sm hover:border-[var(--ink)] transition-colors">Try saving again</button>
+          <button type="button" id="testSaveReplace" class="hidden border border-[var(--incorrect)] text-[var(--incorrect)] rounded-full px-4 py-2 text-sm hover:opacity-80 transition-opacity">Replace my old data</button>
         </div>
 
         <div class="flex items-center gap-4 flex-wrap">
@@ -152,9 +170,9 @@
             <span>Download CSV</span>
             <span class="mono text-xs opacity-70" id="testDownloadSize"></span>
           </button>
-          <button type="button" id="testAgain" class="rounded-full px-5 py-3 text-base text-[var(--muted)] hover:text-[var(--ink)] transition-colors">Enroll another person</button>
+          <button type="button" id="testAgain" class="rounded-full px-5 py-3 text-base text-[var(--muted)] hover:text-[var(--ink)] transition-colors">Back to start</button>
         </div>
-        <p class="text-sm text-[var(--muted)] mt-5">Your saved results are picked up by the <a href="identity.html" class="underline hover:text-[var(--ink)]">Identity page</a> automatically. Nothing needs to be uploaded. The download is just your own copy.</p>
+        <p class="text-sm text-[var(--muted)] mt-5">Next, open the <a href="identity.html" class="underline hover:text-[var(--ink)]">Identity page</a> and press <b>Update model</b> so the model learns your new data. Nothing needs to be uploaded. The download is just your own copy.</p>
       </div>
 
     </div>
@@ -163,8 +181,10 @@
 </div>
 
 <script src="common.js"></script>
+<script src="content.js"></script>
 <script src="config.js"></script>
 <script src="api.js"></script>
+<script src="auth.js"></script>
 <script src="dictionary.js"></script>
 <script src="spellcheck.js"></script>
 <script src="test.js"></script>

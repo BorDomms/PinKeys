@@ -17,7 +17,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="styles.css" />
 </head>
-<body class="min-h-screen">
+<body class="min-h-screen" data-page="identity">
 
 <!-- Recording indicator — hidden until the first real keystroke of a task
      (see "lazy start" in script.js section 5), so it only appears once
@@ -44,19 +44,31 @@
       <span class="font-semibold tracking-tight text-base">Pinkeys</span>
     </div>
 
-    <nav class="relative flex bg-[var(--surface)] border border-[var(--border)] rounded-full p-[3px] min-w-[260px]" id="nav">
+    <div class="flex items-center gap-3 flex-wrap" id="headerRight">
+      <span class="text-sm text-[var(--muted)]">Mode:</span>
+      <nav class="relative flex bg-[var(--surface)] border border-[var(--border)] rounded-full p-[3px] min-w-[260px]" id="nav">
       <div class="absolute top-[3px] bottom-[3px] w-[calc(33.333%-6px)] rounded-full bg-[var(--ink)]" id="navPill" style="left: calc(2 * 33.333% + 3px)"></div>
       <a href="index.html" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-[var(--muted)]">Practice</a>
       <a href="test.html" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-[var(--muted)]">Test</a>
       <a href="identity.html" aria-current="page" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-white">Identity</a>
     </nav>
+      <div id="howtoMount"></div>
+      <div id="userMount"></div>
+    </div>
   </header>
 
   <main id="page-identity">
     <div class="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-8 sm:p-10 lg:p-12">
 
-      <!-- ---- screen 1: start (the API wakes up on its own; nothing to configure or upload) ---- -->
-      <div id="idStart">
+      <!-- ---- not logged in ---- -->
+      <div id="idGate" class="hidden text-center py-8">
+        <h1 class="text-2xl sm:text-3xl font-semibold mb-2">Identity check</h1>
+        <p class="text-base text-[var(--muted)] mb-6" id="idGateText">Log in to use Identity.</p>
+        <button type="button" id="idGateLogin" class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 transition-opacity">Log in or create an account</button>
+      </div>
+
+      <!-- ---- screen 1: start (the API wakes up on its own; your account decides what you can do) ---- -->
+      <div id="idStart" class="hidden">
         <div class="flex items-center justify-between gap-4 flex-wrap mb-2">
           <h1 class="text-2xl sm:text-3xl font-semibold">Identity check</h1>
           <div class="flex items-center gap-2">
@@ -68,12 +80,20 @@
             <button type="button" id="idApiRetry" class="hidden border border-[var(--border)] rounded-full px-4 py-1.5 text-sm hover:border-[var(--ink)] transition-colors">Retry</button>
           </div>
         </div>
-        <p class="text-base text-[var(--muted)] mb-2">
-          Type 3 short passages and the system will guess who you are from how you type.
-          Everyone who has finished the Test page is already included.
-        </p>
-        <p id="idApiDetail" class="text-sm text-[var(--muted)] mb-7 min-h-[1.25rem]"></p>
-        <button type="button" id="idContinue" disabled class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">Start live test</button>
+        <p class="text-base text-[var(--muted)] mb-4" id="idIntro"></p>
+        <p id="idApiDetail" class="text-sm text-[var(--muted)] mb-2 min-h-[1.25rem]"></p>
+
+        <!-- what your account lets you do right now -->
+        <div class="border border-[var(--border)] rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
+          <span id="idUserSpinner" class="hidden w-4 h-4 shrink-0 rounded-full border-2 border-[var(--muted)] border-t-transparent animate-spin"></span>
+          <p id="idUserMsg" class="text-base">Checking your account…</p>
+        </div>
+        <p id="idDisclaimer" class="hidden banner text-sm mb-4"></p>
+
+        <div class="flex items-center gap-3 flex-wrap">
+          <button type="button" id="idUpdate" disabled class="border border-[var(--ink)] text-[var(--ink)] rounded-full px-6 py-3 text-base font-medium hover:bg-[var(--ink)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--ink)] transition-colors">Update model</button>
+          <button type="button" id="idContinue" disabled class="bg-[var(--ink)] text-white rounded-full px-7 py-3.5 text-base font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">Start live test</button>
+        </div>
       </div>
 
       <!-- ---- screen 2: one live sample in progress ---- -->
@@ -141,8 +161,10 @@
 </div>
 
 <script src="common.js"></script>
+<script src="content.js"></script>
 <script src="config.js"></script>
 <script src="api.js"></script>
+<script src="auth.js"></script>
 <script src="identity.js"></script>
 </body>
 </html>

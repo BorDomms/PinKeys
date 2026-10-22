@@ -1,6 +1,6 @@
 /* ==============================================================
    PINKEYS — test.js
-   Test page: enrollment battery, saved online + CSV download.
+   Test page: enrollment battery for the logged-in account, saved online + CSV download.
    Requires common.js (loaded first in the HTML).
    ============================================================== */
 
@@ -9,10 +9,11 @@
    ------------------------------------------------------------- */
 // test tab
 const testIntro = $("testIntro");
-const testFirstName = $("testFirstName");
-const testLastName = $("testLastName");
-const testNickname = $("testNickname");
+const testGate = $("testGate");
 const testConsent = $("testConsent");
+const testReplace = $("testReplace");
+const testReplaceRow = $("testReplaceRow");
+const testIntroMsg = $("testIntroMsg");
 const testBeginBtn = $("testBegin");
 const testRunning = $("testRunning");
 const testRestartBtn = $("testRestart");
@@ -39,6 +40,7 @@ const testDownloadBtn = $("testDownload");
 const testAgainBtn = $("testAgain");
 const testSaveStatus = $("testSaveStatus"), testSaveSpinner = $("testSaveSpinner"), testSaveIcon = $("testSaveIcon");
 const testSaveText = $("testSaveText"), testSaveRetry = $("testSaveRetry"), testDownloadSize = $("testDownloadSize");
+const testSaveReplace = $("testSaveReplace");
 
 /* -------------------------------------------------------------
    7. TEST TAB (enrollment)
@@ -71,8 +73,9 @@ function buildTaskList() {
   return pickN(tasks, tasks.length);   // pickN shuffles, so this mixes all categories together
 }
 
-let testPhase = "intro"; // intro | running | interstitial | done
-let testParticipant = { fn: "", ln: "", nn: "" };
+let testPhase = "gate"; // gate | intro | running | interstitial | done
+let testParticipant = { fn: "", ln: "", nn: "" };   // always the logged-in account
+let testReplaceFlag = false;                          // the person acknowledged that this test replaces their old data
 let testTasks = [];
 let testIdx = 0;
 let testLog = [];
@@ -91,23 +94,83 @@ const testController = createTypingTaskController({
 
 function showTestPhase(phase) {
   testPhase = phase;
+  testGate.classList.toggle("hidden", phase !== "gate");
   testIntro.classList.toggle("hidden", phase !== "intro");
   testRunning.classList.toggle("hidden", phase !== "running");
   testInterstitial.classList.toggle("hidden", phase !== "interstitial");
   testDone.classList.toggle("hidden", phase !== "done");
 }
 
-// "Begin test" only enables once both name fields are filled in and the notice is accepted
+/* -------------------------------------------------------------
+   START SCREEN
+   The person is already logged in, so no names are asked. The text on this screen comes from content.js.
+   If they already have saved data they must tick a second box: this new test REPLACES the old data.
+   ------------------------------------------------------------- */
+const CT = (window.PINKEYS_CONTENT && window.PINKEYS_CONTENT.test) || {};
+let testStatus = null;       // the server's answer from GET /me/status (null = not loaded yet)
+let testIntroUser = null;    // whose status that is
+
 function updateTestBeginState() {
-  testBeginBtn.disabled = !(testFirstName.value.trim() && testLastName.value.trim() && testConsent.checked);
+  const needsReplace = !!(testStatus && testStatus.has_data);
+  testBeginBtn.disabled = !(testStatus && testConsent.checked && (!needsReplace || testReplace.checked));
 }
 testConsent.addEventListener("change", updateTestBeginState);
-testFirstName.addEventListener("input", updateTestBeginState);
-testLastName.addEventListener("input", updateTestBeginState);
+testReplace.addEventListener("change", updateTestBeginState);
+
+function fillIntroText() {
+  const set = (id, v) => { const el = $(id); if (el && v != null) el.innerHTML = v; };
+  set("testIntroTitle", CT.title); set("testInstructionsTitle", CT.instructionsTitle); set("testInstructions", CT.instructionsHtml);
+  set("testWarningTitle", CT.warningTitle); set("testWarning", CT.warningHtml);
+  set("testRegulationsTitle", CT.regulationsTitle); set("testRegulations", CT.regulationsHtml);
+  $("testConsentText").textContent = CT.consentText || "";
+  $("testReplaceText").textContent = CT.replaceText || "";
+}
+
+async function loadTestStatus() {
+  const u = PinkeysApi.session().user;
+  testStatus = null;
+  testReplaceRow.classList.add("hidden");
+  testConsent.checked = false; testReplace.checked = false;
+  updateTestBeginState();
+  $("testAs").innerHTML = `Taking the test as <b>${escapeHtml(u.display_name)}</b> (${escapeHtml(u.first_name + " " + u.last_name)}).`;
+  testIntroMsg.style.color = "var(--muted)";
+  testIntroMsg.textContent = "Checking your account…";
+  try {
+    await PinkeysApi.wake({ onTick: (s) => { if (s >= 3) testIntroMsg.textContent = `Waking the server… ${s}s (a free server can take up to a minute)`; } });
+    if (!PinkeysApi.loggedIn()) return;
+    testStatus = await PinkeysApi.status();
+    testIntroUser = u.first_name + "|" + u.last_name;
+    testReplaceRow.classList.toggle("hidden", !testStatus.has_data);
+    testIntroMsg.textContent = testStatus.has_data ? "You already have saved data. Taking this test again will replace it." : "";
+  } catch (err) {
+    if (!PinkeysApi.loggedIn()) return;       // logged out meanwhile: the gate is showing
+    testIntroMsg.style.color = "var(--incorrect)";
+    testIntroMsg.textContent = "Couldn't check your account: " + err.message + " Reload the page to try again.";
+  }
+  updateTestBeginState();
+}
+
+// show the gate or the start screen depending on whether someone is logged in (not while a test is running)
+let testShownFor = null;
+function syncTestAuth() {
+  if (testPhase === "running" || testPhase === "interstitial" || testPhase === "done") return;
+  const u = PinkeysApi.loggedIn() ? PinkeysApi.session().user : null;
+  const who = u ? u.first_name + "|" + u.last_name : null;
+  if (!u) { testShownFor = null; showTestPhase("gate"); return; }
+  if (who === testShownFor && testPhase === "intro") return;        // e.g. only the nickname changed
+  testShownFor = who;
+  showTestPhase("intro");
+  fillIntroText();
+  loadTestStatus();
+}
+window.addEventListener("pinkeys-auth", syncTestAuth);
+$("testGateLogin").addEventListener("click", () => PinkeysAuth.open("login"));
 
 testBeginBtn.addEventListener("click", () => {
   PinkeysApi.ping();   // a sleeping free server takes a while to wake; start that now, so it is ready at the end
-  testParticipant = { fn: testFirstName.value.trim(), ln: testLastName.value.trim(), nn: testNickname.value.trim() };
+  const u = PinkeysApi.session().user;
+  testParticipant = { fn: u.first_name, ln: u.last_name, nn: u.nickname || "" };
+  testReplaceFlag = !!(testStatus && testStatus.has_data && testReplace.checked);
   testSessionId = uid();
   testTasks = buildTaskList();
   testIdx = 0;
@@ -253,26 +316,34 @@ function setSaveStatus(state, text) {
 let testSaving = false;
 window.addEventListener("beforeunload", (e) => { if (testSaving) { e.preventDefault(); e.returnValue = ""; } });
 
-async function saveTestToCloud() {
+async function saveTestToCloud(replace = testReplaceFlag) {
   if (testSaving) return;
+  testSaveReplace.classList.add("hidden");
   setSaveStatus("saving", "Saving your results online…");
   try {
     await PinkeysApi.wake({ onTick: (s) => { if (s >= 3) setSaveStatus("saving", `Waking the server… ${s}s (a free server can take up to a minute)`); } });
     setSaveStatus("saving", "Saving your results online…");
-    await PinkeysApi.collect(testCsvText);
-    setSaveStatus("saved", "Saved online. You'll show up on the Identity page shortly.");
+    const r = await PinkeysApi.collect(testCsvText, replace);
+    setSaveStatus("saved", r.duplicate ? "Already saved online." : r.replaced ? "Saved online. Your old data was replaced." : "Saved online.");
+    testReplaceFlag = replace;
   } catch (err) {
-    setSaveStatus("failed", "Not saved: " + err.message + " You can still download your CSV.");
+    if (err.status === 401) {
+      setSaveStatus("failed", "You're logged out. Log in, then press Try saving again. Your results are kept on this page.");
+      PinkeysAuth.open("login");
+    } else if (err.status === 409) {       // you already have data and did not tick the box (e.g. you took another test in another tab)
+      setSaveStatus("failed", err.message);
+      testSaveReplace.classList.remove("hidden");
+    } else {
+      setSaveStatus("failed", "Not saved: " + err.message + " You can still download your CSV.");
+    }
   }
 }
-testSaveRetry.addEventListener("click", saveTestToCloud);
+testSaveRetry.addEventListener("click", () => saveTestToCloud());
+testSaveReplace.addEventListener("click", () => saveTestToCloud(true));
 
-PinkeysApi.ping();   // wake a sleeping server while the person fills in the form
-testAgainBtn.addEventListener("click", () => {
-  testFirstName.value = ""; testLastName.value = ""; testNickname.value = ""; testConsent.checked = false; testCsvText = "";
-  updateTestBeginState();
-  showTestPhase("intro");
-});
+PinkeysApi.ping();   // wake a sleeping server while the person reads the start screen
+syncTestAuth();
+testAgainBtn.addEventListener("click", () => { testCsvText = ""; testPhase = "intro"; testShownFor = null; syncTestAuth(); });
 
 
 /* -------------------------------------------------------------

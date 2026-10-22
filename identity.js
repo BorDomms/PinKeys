@@ -1,17 +1,20 @@
 /* ==============================================================
    PINKEYS — identity.js
-   Identity page. The API starts waking as soon as the page opens;
-   a badge shows starting… / API ON / API OFF. The person types 3
-   short passages and the API names the closest enrolled person.
-   Enrollment is automatic: finished Test sessions are saved online
-   and the server retrains itself, so there is nothing to upload.
-   Requires common.js, config.js and api.js (loaded first).
+   Identity page. You must be logged in. The API starts waking as soon as
+   the page opens (badge: starting… / API ON / API OFF). Your account decides
+   what you can do: no saved test -> take the Test; saved but not in the model
+   -> press Update model and wait; in the model -> type 3 short passages and the
+   API names the closest enrolled person.
+   Requires common.js, content.js, config.js, api.js and auth.js (loaded first).
    ============================================================== */
 
+const idGate = $("idGate");
 const idStart = $("idStart");
 const idContinueBtn = $("idContinue");
+const idUpdateBtn = $("idUpdate");
 const idApiBadge = $("idApiBadge"), idApiSpinner = $("idApiSpinner"), idApiDot = $("idApiDot");
 const idApiLabel = $("idApiLabel"), idApiRetry = $("idApiRetry"), idApiDetail = $("idApiDetail");
+const idUserMsg = $("idUserMsg"), idUserSpinner = $("idUserSpinner"), idDisclaimer = $("idDisclaimer");
 const idRunning = $("idRunning");
 const idRestartBtn = $("idRestart");
 const idProgress = $("idProgress");
@@ -27,12 +30,16 @@ const idResult = $("idResult");
 const idApiSummary = $("idApiSummary"), idApiBody = $("idApiBody"), idApiNote = $("idApiNote");
 const idRunAgainBtn = $("idRunAgain");
 
+const CI = (window.PINKEYS_CONTENT && window.PINKEYS_CONTENT.identity) || {};
+const say = (key, fallback) => CI[key] || fallback;
+$("idIntro").textContent = say("intro", "Type 3 short passages and the system will guess who you are from how you type.");
+$("idGateText").textContent = say("loggedOut", "Log in to use Identity.");
+$("idGateLogin").addEventListener("click", () => PinkeysAuth.open("login"));
+
 /* -------------------------------------------------------------
-   API STATUS
+   THE API BADGE
    starting (gray, spinner) -> API ON (green) | API OFF (red)
-   "ON" means the server answers and can identify (a model is loaded).
-   A server that answers but has nobody enrolled yet is ON, but the
-   test can't start until someone has finished the Test page.
+   "ON" means the server answers. What YOU can do then depends on your account (below).
    ------------------------------------------------------------- */
 const API_LOOK = {
   starting: { color: "var(--muted)",     label: "starting…" },
@@ -40,9 +47,6 @@ const API_LOOK = {
   off:      { color: "var(--incorrect)", label: "API OFF" },
 };
 let idApiState = "starting";
-let idApiTrained = false;   // a model is loaded and usable
-let idPeople = 0;
-let idLiveBusy = false;     // one live request at a time
 let idChecking = false;
 
 function setApiState(state, detail) {
@@ -55,35 +59,20 @@ function setApiState(state, detail) {
   idApiDot.classList.toggle("hidden", state === "starting");
   idApiRetry.classList.toggle("hidden", state !== "off");
   idApiDetail.textContent = detail || "";
-  idContinueBtn.disabled = !(state === "on" && idApiTrained);
-}
-
-// turn a /health answer into the badge + a one-line explanation
-function applyHealth(h) {
-  idApiTrained = !!h.trained && !h.problem;
-  idPeople = h.people || 0;
-  if (h.problem) {
-    setApiState("off", "The server is up, but its saved model can't be used: " + h.problem);
-  } else if (idApiTrained) {
-    setApiState("on", `${idPeople} ${idPeople === 1 ? "person is" : "people are"} enrolled and ready to be recognized.`);
-  } else if (h.training) {
-    setApiState("on", "The model is being trained from the latest tests. Check back in a minute or two.");
-  } else {
-    setApiState("on", "Nobody is enrolled yet. Finish the Test page first (the server learns from every finished test).");
-  }
+  renderUserState();
 }
 
 async function startApi() {
   if (idChecking) return;
   idChecking = true;
-  idApiTrained = false;
   setApiState("starting", PinkeysApi.configured() ? "Waking the server. A free server can take up to a minute." : "");
   try {
-    applyHealth(await PinkeysApi.wake({
+    const h = await PinkeysApi.wake({
       onTick: (s) => { if (s >= 3) idApiDetail.textContent = `Waking the server… ${s}s (a free server can take up to a minute)`; },
-    }));
+    });
+    setApiState("on", h.problem ? "The server is up, but its saved model can't be used yet: " + h.problem : "");
+    await refreshUserState();
   } catch (err) {
-    idApiTrained = false;
     setApiState("off", err.message);
   } finally {
     idChecking = false;
@@ -91,17 +80,97 @@ async function startApi() {
 }
 idApiRetry.addEventListener("click", startApi);
 
-// while the start screen is open, quietly keep the badge honest (and the enrolled count fresh)
-setInterval(async () => {
-  if (idPhase !== "start" || idChecking || idApiState === "starting") return;
-  try { applyHealth(await PinkeysApi.health()); }
-  catch { startApi(); }   // it stopped answering: show starting… and try to wake it again
-}, 45000);
+/* -------------------------------------------------------------
+   YOUR ACCOUNT'S STATE  (from the server: GET /me/status)
+     no_data       you have not taken the Test          -> both buttons off
+     too_few       your saved test is too short          -> both buttons off
+     needs_update  you have data the model hasn't seen   -> Update on, Start off
+     training      the model is being updated            -> both off, we keep checking
+     blocked       update can't help yet (see message)   -> both off
+     ready         you are in the model                  -> Start on, Update off
+   ------------------------------------------------------------- */
+let idUser = null;          // the last /me/status answer
+let idPollTimer = null;
+let idShownFor = null;
+
+function renderUserState() {
+  const on = idApiState === "on", st = idUser;
+  let msg = "Checking your account…", spin = false;
+  if (idApiState === "starting") { msg = "Waiting for the server…"; spin = true; }
+  else if (!on) msg = "The server isn't reachable right now, so your account can't be checked.";
+  else if (st) {
+    if (st.state === "no_data") msg = say("noData", "Take the Test to participate here.");
+    else if (st.state === "too_few") msg = st.detail;
+    else if (st.state === "needs_update") msg = say("needsUpdate", "Your test data is saved, but the model doesn't include it yet. Press Update model.") + (st.detail ? " (Last time: " + st.detail + ")" : "");
+    else if (st.state === "training") { msg = say("training", "The model is being updated…"); spin = true; }
+    else if (st.state === "blocked") msg = st.detail;
+    else if (st.state === "ready") msg = say("ready", "You're in the model. You can start the live test.");
+  } else spin = true;
+  idUserMsg.textContent = msg;
+  idUserSpinner.classList.toggle("hidden", !spin);
+  idUpdateBtn.disabled = !(on && st && st.can_update);
+  idContinueBtn.disabled = !(on && st && st.can_start);
+  const showDisclaimer = on && st && (st.state === "needs_update" || st.state === "training");
+  idDisclaimer.classList.toggle("hidden", !showDisclaimer);
+  if (showDisclaimer) {
+    idDisclaimer.innerHTML = say("disclaimerHtml", "Updating the model takes some time (often a minute or more). While you wait, you can enjoy {practice}.")
+      .replace("{practice}", '<a href="index.html" class="underline">Practice mode</a>');
+  }
+}
+
+async function refreshUserState() {
+  clearTimeout(idPollTimer);
+  if (!PinkeysApi.loggedIn() || idApiState !== "on") return;
+  try {
+    idUser = await PinkeysApi.status();
+    if (idApiState === "on" && idUser.model_people != null && idUser.state !== "no_data") {
+      idApiDetail.textContent = `The model currently knows ${idUser.model_people} ${idUser.model_people === 1 ? "person" : "people"}.`;
+    }
+  } catch (err) {
+    if (!PinkeysApi.loggedIn()) return;                 // logged out meanwhile: the gate is showing
+    if (err.status === undefined) setApiState("off", err.message);
+    else { idUserMsg.textContent = "Couldn't check your account: " + err.message; }
+    return;
+  }
+  renderUserState();
+  // while the model is being updated keep checking every few seconds; otherwise quietly every 45 s
+  idPollTimer = setTimeout(() => { if (idPhase === "start") refreshUserState(); else if (idUser && idUser.state === "training") refreshUserState(); },
+    idUser.state === "training" ? 4000 : 45000);
+}
+
+idUpdateBtn.addEventListener("click", async () => {
+  idUpdateBtn.disabled = true;
+  idUserMsg.textContent = "Starting the update…";
+  try {
+    await PinkeysApi.updateModel();
+  } catch (err) {
+    idUserMsg.textContent = err.message;
+    await refreshUserState();
+    return;
+  }
+  idUser = { ...(idUser || {}), state: "training", can_update: false, can_start: false };
+  renderUserState();
+  setTimeout(refreshUserState, 2500);
+});
+
+// show the gate or the start screen depending on whether someone is logged in
+function syncIdAuth() {
+  if (idPhase === "running" || idPhase === "interstitial") return;
+  const u = PinkeysApi.loggedIn() ? PinkeysApi.session().user : null;
+  if (!u) { idShownFor = null; idUser = null; clearTimeout(idPollTimer); showIdPhase("gate"); return; }
+  const who = u.first_name + "|" + u.last_name;
+  if (who === idShownFor && (idPhase === "start" || idPhase === "result")) return;   // e.g. only the nickname changed
+  idShownFor = who; idUser = null;
+  showIdPhase("start");
+  renderUserState();
+  if (idApiState === "on") refreshUserState(); else if (!idChecking) startApi();
+}
+window.addEventListener("pinkeys-auth", syncIdAuth);
 
 /* -------------------------------------------------------------
    FLOW: start -> running -> interstitial -> result
    ------------------------------------------------------------- */
-let idPhase = "start";
+let idPhase = "gate";
 let idTasks = [];
 let idIdx = 0;
 let idLiveSegments = [];   // one array of events per finished passage (the API keeps each passage's clock separate)
@@ -114,6 +183,7 @@ const idController = createTypingTaskController({
 
 function showIdPhase(phase) {
   idPhase = phase;
+  idGate.classList.toggle("hidden", phase !== "gate");
   idStart.classList.toggle("hidden", phase !== "start");
   idRunning.classList.toggle("hidden", phase !== "running");
   idInterstitial.classList.toggle("hidden", phase !== "interstitial");
@@ -159,7 +229,7 @@ idRestartBtn.addEventListener("click", () => idController.restart());
 
 // while someone types: send what we have so far, show the current best guess
 async function idOnProgress(events) {
-  if (idPhase !== "running" || idLiveBusy || !idApiTrained) return;
+  if (idPhase !== "running" || idLiveBusy || !(idUser && idUser.can_start)) return;
   idLiveBusy = true;
   try {
     const r = await PinkeysApi.identify([...idLiveSegments, events], 3);
@@ -201,7 +271,7 @@ async function showIdResult() {
     idApiSummary.textContent = "API unavailable: " + err.message;
   }
 }
-idRunAgainBtn.addEventListener("click", () => { showIdPhase("start"); startApi(); });   // also refreshes the enrolled count
+idRunAgainBtn.addEventListener("click", () => { showIdPhase("start"); renderUserState(); refreshUserState(); });
 
 /* -------------------------------------------------------------
    PAGE SHELL
@@ -222,3 +292,4 @@ document.addEventListener("keydown", (e) => {
 });
 
 startApi();   // wake the API the moment the page opens
+syncIdAuth();

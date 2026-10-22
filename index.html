@@ -17,7 +17,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="styles.css" />
 </head>
-<body class="min-h-screen">
+<body class="min-h-screen" data-page="practice">
 
 <!-- Recording indicator — hidden until the first real keystroke of a task
      (see "lazy start" in script.js section 5), so it only appears once
@@ -44,12 +44,17 @@
       <span class="font-semibold tracking-tight text-base">Pinkeys</span>
     </div>
 
-    <nav class="relative flex bg-[var(--surface)] border border-[var(--border)] rounded-full p-[3px] min-w-[260px]" id="nav">
+    <div class="flex items-center gap-3 flex-wrap" id="headerRight">
+      <span class="text-sm text-[var(--muted)]">Mode:</span>
+      <nav class="relative flex bg-[var(--surface)] border border-[var(--border)] rounded-full p-[3px] min-w-[260px]" id="nav">
       <div class="absolute top-[3px] bottom-[3px] w-[calc(33.333%-6px)] rounded-full bg-[var(--ink)]" id="navPill" style="left: calc(0 * 33.333% + 3px)"></div>
       <a href="index.html" aria-current="page" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-white">Practice</a>
       <a href="test.html" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-[var(--muted)]">Test</a>
       <a href="identity.html" class="relative z-10 flex-1 text-center px-3 py-2 text-sm rounded-full transition-colors text-[var(--muted)]">Identity</a>
     </nav>
+      <div id="howtoMount"></div>
+      <div id="userMount"></div>
+    </div>
   </header>
 
   <main id="page-practice">
@@ -154,6 +159,10 @@
 </div>
 
 <script src="common.js"></script>
+<script src="content.js"></script>
+<script src="config.js"></script>
+<script src="api.js"></script>
+<script src="auth.js"></script>
 <script src="dictionary.js"></script>
 <script src="spellcheck.js"></script>
 <script src="practice.js"></script>

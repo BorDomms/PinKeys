@@ -1,12 +1,15 @@
 /* ==============================================================
    PINKEYS — api.js
-   Key-free client for the Python identification API.
-   The website only ever calls three PUBLIC endpoints:
-     GET  /health    is it awake, is a model loaded, how many people
-     POST /identify  who does this typing look like
-     POST /collect   save one finished test (CSV text) for enrollment
-   Retraining, reloading, profiles and reset are admin-only and need
-   a key that lives on Render — never in this website.
+   Client for the Python API. There is no API key in the website. People log
+   in with their name + password and the server hands back a signed token,
+   which is sent as "Authorization: Bearer <token>".
+     GET  /health         is it awake, is a model loaded, how many people   (public)
+     POST /register /login, GET /me, POST /me/nickname                      (accounts)
+     GET  /me/status      do I have data, am I in the model                  (logged in)
+     POST /collect        save my finished test (replaces my old data)       (logged in)
+     POST /model/update   retrain so the model includes my data              (logged in)
+     POST /identify       who does this typing look like                     (logged in)
+   Admin actions need a key that lives only on the server, never here.
    The address comes from config.js. If it is still the placeholder,
    a page opened from localhost / a file falls back to localhost:8000.
    ============================================================== */
@@ -22,15 +25,31 @@ const PinkeysApi = (() => {
   }
   const configured = () => !!baseUrl();
 
+  // ---- the login session (a signed token from the server; no password is ever stored in the browser) ----
+  const TOKEN_KEY = "pinkeys.token", USER_KEY = "pinkeys.user";
+  const getStore = (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } };
+  const setStore = (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch { /* storage blocked: you stay logged in until the page closes */ } };
+  let mem = { token: getStore(TOKEN_KEY), user: null };
+  try { mem.user = JSON.parse(getStore(USER_KEY) || "null"); } catch { mem.user = null; }
+  const changed = () => window.dispatchEvent(new CustomEvent("pinkeys-auth"));
+  function setSession(token, user) { mem = { token, user }; setStore(TOKEN_KEY, token); setStore(USER_KEY, JSON.stringify(user)); changed(); }
+  function setUser(user) { mem.user = user; setStore(USER_KEY, JSON.stringify(user)); changed(); }
+  function clearSession() { mem = { token: "", user: null }; setStore(TOKEN_KEY, ""); setStore(USER_KEY, ""); changed(); }
+  const loggedIn = () => !!(mem.token && mem.user);
+
   // one place for every request: base URL, timeout, readable errors
   async function call(path, options = {}, timeoutMs = 15000) {
     const base = baseUrl();
     if (!base) throw new Error("The API address isn't set. Put your Render address in config.js.");
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
+    const { skipAuth, ...fetchOptions } = options;
+    const headers = { ...(fetchOptions.headers || {}) };
+    const hadToken = !skipAuth && !!mem.token;
+    if (hadToken) headers.Authorization = "Bearer " + mem.token;
     let res;
     try {
-      res = await fetch(base + path, { ...options, signal: ctl.signal });
+      res = await fetch(base + path, { ...fetchOptions, headers, signal: ctl.signal });
     } catch (e) {
       throw new Error(e && e.name === "AbortError" ? "The API took too long to answer." : "Can't reach the API. It may be asleep or offline.");
     } finally {
@@ -42,6 +61,7 @@ const PinkeysApi = (() => {
       const d = body && body.detail;
       const err = new Error(typeof d === "string" ? d : d ? JSON.stringify(d) : `API error ${res.status}`);
       err.status = res.status;
+      if (res.status === 401 && hadToken) clearSession();      // the login expired or was reset: show the logged-out state
       throw err;
     }
     if (body === null) {   // 200 OK but not JSON: e.g. a sleeping host's loading page
@@ -84,8 +104,17 @@ const PinkeysApi = (() => {
     }
   }
 
+  const json = (method, body, extra = {}) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), ...extra });
+
   return {
     configured, ping, wake,
+    session: () => ({ ...mem }), loggedIn, setSession, setUser, clearSession,
+    register: (b) => call("/register", json("POST", b, { skipAuth: true }), 30000),
+    login: (b) => call("/login", json("POST", b, { skipAuth: true }), 30000),
+    me: () => call("/me", {}, 10000),
+    status: () => call("/me/status", { cache: "no-store" }, 20000),
+    setNickname: (nickname) => call("/me/nickname", json("POST", { nickname }), 15000),
+    updateModel: () => call("/model/update", { method: "POST" }, 20000),
     health: () => call("/health", { cache: "no-store" }, 8000),
     // segments = one array of logger events per typed passage
     identify(segments, topK = 5) {
@@ -94,13 +123,9 @@ const PinkeysApi = (() => {
         body: JSON.stringify({ segments: segments.map(clean), top_k: topK }),
       });
     },
-    // save one finished test: the same CSV text the Download button produces
-    collect(csvText) {
-      return call("/collect", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ csv: csvText }),
-      }, 90000);
-    },
+    // save one finished test (the same CSV text the Download button produces). replace=true is needed
+    // when the person already has saved data: the old data then becomes a hidden backup.
+    collect: (csvText, replace = false) => call("/collect", json("POST", { csv: csvText, replace: !!replace }), 90000),
   };
 })();
 
