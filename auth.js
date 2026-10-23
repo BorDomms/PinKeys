@@ -195,13 +195,13 @@ const PinkeysAuth = (() => {
     }
     busy = true; btn.disabled = true; msg.style.color = "var(--muted)"; msg.textContent = "One moment…";
     try {
-      await PinkeysApi.wake({ onTick: (s) => { if (s >= 3) msg.textContent = `Waking the server… ${s}s (a free server can take up to a minute)`; }, timeoutMs: 120000 });
+      // Login goes straight to Supabase (no waiting for the API). register/login also store the session.
       msg.textContent = reg ? "Creating your account…" : "Logging in…";
-      const r = reg ? await PinkeysApi.register(body) : await PinkeysApi.login(body);
+      if (reg) await PinkeysApi.register(body); else await PinkeysApi.login(body);
       busy = false;
       $("pkPass").value = ""; $("pkConfirm").value = "";
       modal.classList.add("hidden");
-      PinkeysApi.setSession(r.token, r.user);
+      PinkeysApi.ping();        // start waking the API now, for the pages that need it
     } catch (err) {
       fail(err.message);
     } finally {

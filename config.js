@@ -8,4 +8,6 @@
    ============================================================== */
 window.PINKEYS_CONFIG = {
   API_URL: "https://pinkeys-api.onrender.com",
+  SUPABASE_URL: "https://snjszrhekxwjibxkaltm.supabase.co",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNuanN6cmhla3h3amlieGthbHRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxOTk5MTgsImV4cCI6MjEwNzc3NTkxOH0.AFIrJiSuXRqPw4-C66M2bwF78d0CBWmIPaA7x18Vw6M"
 };
